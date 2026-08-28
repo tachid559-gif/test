@@ -197,6 +197,9 @@
             <button class="btn" style="background-color: #64748b; font-size: 16px; padding: 14px;" onclick="prepareAndPrint('preview')">👁️ ดูตัวอย่าง</button>
             <button class="btn" style="background-color: #0f766e; font-size: 16px; padding: 14px;" onclick="prepareAndPrint('real')">💾 บันทึกและสั่งซื้อ</button>
         </div>
+        <div style="text-align: center; font-size: 12.5px; color: #b91c1c; margin-top: 12px; line-height: 1.5; font-weight: 600;">
+            *ถ้ากดบันทึกจะเป็นการบันทึกข้อมูลการสั่งซื้อของคุณเข้าสู่ระบบ คุณสามารถกดดูตัวอย่างเพื่อดูใบสั่งซื้อก่อนได้ (ไม่มีเลขใบสั่งซื้อ ไม่สามารถใช้ได้)
+        </div>
     </div>
 </div>
 
@@ -266,6 +269,7 @@
     const { createClient } = supabase; const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY); 
 
     let dbPrices = [], dbTransport = [], dbCapacity = [];
+    let currentOrderSummary = null; // ตัวแปรสำหรับเก็บข้อมูลออเดอร์ก่อนบันทึก
 
     async function checkAuth() {
         try {
@@ -357,7 +361,7 @@
         const rows = document.querySelectorAll('.item-row'); const prtTableBody = document.getElementById('prtTableBody'); prtTableBody.innerHTML = ""; 
         let count = 0; let err = false; let deliveryGroups = {}; let totalDeliveryMeters = 0; 
         
-        // ---------------- รอบที่ 1: ดึงข้อมูล ----------------
+        // ---------------- รอบที่ 1: ดึงข้อมูลรายการ ----------------
         rows.forEach((r) => {
             const type = r.querySelector('.pType').value; const priceType = r.querySelector('.pPriceType').value; const lStr = r.querySelector('.pLen').value; const qStr = r.querySelector('.pQty').value;
             if (lStr==='' && qStr==='') return; const l = parseFloat(lStr); const q = parseInt(qStr); if (!l || !q) { err = true; return; } count++;
@@ -374,7 +378,7 @@
         let tCost = 0; let tNote = ""; let transportNotes = []; let penalizedTypes = new Set();
         let totalFree10w = 0; let totalFree6w = 0;
         
-        // ---------------- รอบที่ 2: ตรรกะจัดรถตามลำดับความสำคัญ ----------------
+        // ---------------- รอบที่ 2: ตรรกะจัดรถตามกฎ 5 ข้ออย่างเคร่งครัด ----------------
         if (document.getElementById('needDelivery').checked && totalDeliveryMeters > 0) {
             const truckForce = document.querySelector('input[name="truckType"]:checked').value; 
             let leftovers = []; 
@@ -386,129 +390,111 @@
                 return match ? match.cost : Infinity;
             };
 
-            const getFreeLimit = (typeStr, carStr) => {
-                let rules = dbTransport.filter(t => (typeStr === '' ? String(t.type).includes('คละ') : String(t.type).trim() === typeStr.trim()) && String(t.car).includes(carStr));
-                let freeRule = [...rules].reverse().find(r => r.cost === 0);
-                if (freeRule) return freeRule.limit;
-                let capData = dbCapacity.find(c => String(c.type).trim() === (typeStr === '' ? 'คละแบบ' : typeStr.trim()));
-                return capData ? (carStr === '10 ล้อ' ? capData.cap10 : capData.cap6) : 0;
-            };
-            
-            // Step 1: ประเมินรายหน้าตัด
+            // Step 1: ประเมินรายหน้าตัดตามกฎ 5 ข้อ (ไม่มีการเดา หรือให้คะแนน)
             for (let type in deliveryGroups) {
                 let m = deliveryGroups[type].meters; 
                 let wPerMeter = deliveryGroups[type].weight / m;
                 
-                let freeLimit10 = getFreeLimit(type, '10 ล้อ');
-                let freeLimit6  = getFreeLimit(type, '6 ล้อ');
+                let r10 = dbTransport.filter(t => String(t.type).trim() === type.trim() && String(t.car).includes('10 ล้อ')).sort((a,b)=>a.limit-b.limit);
+                let r6  = dbTransport.filter(t => String(t.type).trim() === type.trim() && String(t.car).includes('6 ล้อ')).sort((a,b)=>a.limit-b.limit);
+                
+                let maxTrans6  = r6.length > 0 ? r6[r6.length - 1].limit : 0;
+                let maxTrans10 = r10.length > 0 ? r10[r10.length - 1].limit : 0;
 
-                // 1. เช็คโปรโมชั่น 0 บาททันทีก่อนหักส่วนย่อย
-                let cost10 = (truckForce === 'auto' || truckForce === '10w') ? getCost(type, m, '10 ล้อ') : Infinity;
-                let cost6  = (truckForce === 'auto' || truckForce === '6w')  ? getCost(type, m, '6 ล้อ')  : Infinity;
+                let capData = dbCapacity.find(c => String(c.type).trim() === type.trim());
+                let cap10 = capData && capData.cap10 > 0 ? capData.cap10 : maxTrans10;
+                let cap6  = capData && capData.cap6 > 0 ? capData.cap6 : maxTrans6;
 
-                if (cost10 === 0 && cost10 <= cost6) {
-                    totalFree10w++; m = 0; // 10 ล้อฟรีทันที
-                } else if (cost6 === 0) {
-                    totalFree6w++; m = 0; // 6 ล้อฟรีทันที
-                } else {
-                    // 2. ถ้าไม่ตกโปร 0 บาท ค่อยหัก 10 ล้อเต็มคันออกไป
-                    if (truckForce === 'auto' || truckForce === '10w') {
-                        while (freeLimit10 > 0 && m >= freeLimit10) {
-                            totalFree10w++;
-                            m -= freeLimit10;
+                // วนลูปจัดการตัดเที่ยวรถ (Waterfall Logic)
+                while (m > 0) {
+                    if (truckForce === '6w') {
+                        if (m <= maxTrans6) {
+                            let c = getCost(type, m, '6 ล้อ');
+                            if (c === 0) totalFree6w++; else leftovers.push({ type: type, m: m, w: m * wPerMeter, car: '6 ล้อ', cost: c });
+                            m = 0; break;
+                        } else {
+                            totalFree6w++; m -= cap6; continue;
                         }
                     }
-
-                    // เช็คเศษหลังหัก 10 ล้อ ว่าเข้าโปรฟรีหรือไม่
-                    cost10 = (truckForce === 'auto' || truckForce === '10w') ? getCost(type, m, '10 ล้อ') : Infinity;
-                    cost6  = (truckForce === 'auto' || truckForce === '6w')  ? getCost(type, m, '6 ล้อ')  : Infinity;
-
-                    if (m > 0 && cost10 === 0 && cost10 <= cost6) {
-                        totalFree10w++; m = 0;
-                    } else if (m > 0 && cost6 === 0) {
-                        totalFree6w++; m = 0;
-                    } else {
-                        // 3. หัก 6 ล้อเต็มคัน
-                        if (truckForce === 'auto' || truckForce === '6w') {
-                            while (freeLimit6 > 0 && m >= freeLimit6) {
-                                totalFree6w++;
-                                m -= freeLimit6;
-                            }
+                    else {
+                        // กฎข้อ 1: เช็คเรทสูงสุด 6 ล้อก่อน (ถ้าไม่เกิน และไม่บังคับ 10 ล้อ ให้จบที่ 6 ล้อ)
+                        if (m <= maxTrans6 && truckForce !== '10w') {
+                            let c = getCost(type, m, '6 ล้อ');
+                            if (c === 0) totalFree6w++; else leftovers.push({ type: type, m: m, w: m * wPerMeter, car: '6 ล้อ', cost: c });
+                            m = 0; break;
                         }
-
-                        // เช็คเศษหลังหัก 6 ล้อรอบสุดท้าย
-                        if (m > 0) {
-                            cost10 = (truckForce === 'auto' || truckForce === '10w') ? getCost(type, m, '10 ล้อ') : Infinity;
-                            cost6  = (truckForce === 'auto' || truckForce === '6w')  ? getCost(type, m, '6 ล้อ')  : Infinity;
-                            if (cost10 === 0 && cost10 <= cost6) { totalFree10w++; m = 0; }
-                            else if (cost6 === 0) { totalFree6w++; m = 0; }
+                        // กฎข้อ 1 & 2: ถ้าเกินเรทสูงสุด 6 ล้อ -> อัปเกรดเป็น 10 ล้อทันที!
+                        if (m <= maxTrans10) {
+                            let c = getCost(type, m, '10 ล้อ');
+                            if (c === 0) totalFree10w++; else leftovers.push({ type: type, m: m, w: m * wPerMeter, car: '10 ล้อ', cost: c });
+                            m = 0; break; // จบใน 10 ล้อคันนั้น
+                        } 
+                        // กฎข้อ 3 & 4: ถ้าเกินเรทสูงสุด 10 ล้อ -> ตัดรอบคันเต็มด้วย Capacity 10 ล้อ แล้ววนลูปกลับไปข้อ 1 ใหม่
+                        if (m > maxTrans10) {
+                            totalFree10w++; m -= cap10; continue;
                         }
                     }
-                }
-
-                if (m > 0) {
-                    leftovers.push({ type: type, m: m, w: m * wPerMeter });
                 }
             }
 
             // Step 2: ประเมินเศษ
             if (leftovers.length === 1) {
+                // กฎข้อ 2: เศษหน้าตัดเดียว คิดค่าส่งตามสเต็ป ไม่ปรับราคารับเอง
                 let l = leftovers[0];
-                let cost10 = (truckForce === 'auto' || truckForce === '10w') ? getCost(l.type, l.m, '10 ล้อ') : Infinity;
-                let cost6  = (truckForce === 'auto' || truckForce === '6w')  ? getCost(l.type, l.m, '6 ล้อ')  : Infinity;
-                let fCost  = Math.min(cost10, cost6);
-
-                if (fCost !== Infinity) { 
-                    tCost += fCost; 
-                    let pickedCar = (cost10 <= cost6 && cost10 !== Infinity) ? '10 ล้อ' : '6 ล้อ';
-                    if (fCost > 0) transportNotes.push(`เศษ ${l.type} ${l.m.toLocaleString()} ม. (${pickedCar}) = ${fCost.toLocaleString()} บ.`); 
-                } else {
-                    transportNotes.push(`เศษ ${l.type} เกินเกณฑ์ขนส่ง`);
-                }
+                tCost += l.cost;
+                if (l.cost > 0) transportNotes.push(`เศษ ${l.type} ${l.m.toLocaleString()} ม. (${l.car}) = ${l.cost.toLocaleString()} บ.`);
             } else if (leftovers.length > 1) {
+                // กฎข้อ 4: เศษหลายหน้าตัด รวมน้ำหนักคิดตามเกณฑ์คละแบบ
                 let totalW = leftovers.reduce((sum, item) => sum + item.w, 0);
-                let freeLimit10Mix = getFreeLimit('', '10 ล้อ');
-                let freeLimit6Mix  = getFreeLimit('', '6 ล้อ');
 
-                let cost10 = (truckForce === 'auto' || truckForce === '10w') ? getCost('', totalW, '10 ล้อ') : Infinity;
-                let cost6  = (truckForce === 'auto' || truckForce === '6w')  ? getCost('', totalW, '6 ล้อ')  : Infinity;
+                let mr10 = dbTransport.filter(t => String(t.type).includes('คละ') && String(t.car).includes('10 ล้อ')).sort((a,b)=>a.limit-b.limit);
+                let mr6  = dbTransport.filter(t => String(t.type).includes('คละ') && String(t.car).includes('6 ล้อ')).sort((a,b)=>a.limit-b.limit);
 
-                if (cost10 === 0 && cost10 <= cost6) {
-                    totalFree10w++; totalW = 0;
-                } else if (cost6 === 0) {
-                    totalFree6w++; totalW = 0;
+                let maxTransMix6  = mr6.length > 0 ? mr6[mr6.length - 1].limit : 0;
+                let maxTransMix10 = mr10.length > 0 ? mr10[mr10.length - 1].limit : 0;
+
+                let capMixed = dbCapacity.find(c => String(c.type).includes('คละ'));
+                let capMix10 = capMixed && capMixed.cap10 > 0 ? capMixed.cap10 : maxTransMix10;
+                let capMix6  = capMixed && capMixed.cap6 > 0 ? capMixed.cap6 : maxTransMix6;
+
+                let mixCar = '10 ล้อ';
+                let fCost = Infinity;
+
+                if (truckForce === '6w') {
+                    mixCar = '6 ล้อ';
+                    if (totalW <= maxTransMix6) {
+                        fCost = getCost('', totalW, '6 ล้อ');
+                        if (fCost === 0) { totalFree6w++; totalW = 0; }
+                    } else {
+                        while (capMix6 > 0 && totalW > maxTransMix6) { totalFree6w++; totalW -= capMix6; }
+                        fCost = getCost('', totalW, '6 ล้อ');
+                        if (fCost === 0) { totalFree6w++; totalW = 0; }
+                    }
                 } else {
-                    if (truckForce === 'auto' || truckForce === '10w') {
-                        while (freeLimit10Mix > 0 && totalW >= freeLimit10Mix) {
-                            totalFree10w++;
-                            totalW -= freeLimit10Mix;
+                    // กฎข้อ 3: เกณฑ์คละแบบ ถ้าไม่เกิน 6 ล้อ และไม่บังคับ 10 ล้อ ให้ดู 6 ล้อก่อน ถ้าเกิน ตัดเป็น 10 ล้อ
+                    if (totalW <= maxTransMix6 && truckForce !== '10w') {
+                        mixCar = '6 ล้อ';
+                        fCost = getCost('', totalW, '6 ล้อ');
+                        if (fCost === 0) { totalFree6w++; totalW = 0; }
+                    } else {
+                        mixCar = '10 ล้อ';
+                        if (totalW <= maxTransMix10) {
+                            fCost = getCost('', totalW, '10 ล้อ');
+                            if (fCost === 0) { totalFree10w++; totalW = 0; }
+                        } else {
+                            while (capMix10 > 0 && totalW > maxTransMix10) { totalFree10w++; totalW -= capMix10; }
+                            fCost = getCost('', totalW, '10 ล้อ');
+                            if (fCost === 0) { totalFree10w++; totalW = 0; }
                         }
-                    }
-                    if (truckForce === 'auto' || truckForce === '6w') {
-                        while (freeLimit6Mix > 0 && totalW >= freeLimit6Mix) {
-                            totalFree6w++;
-                            totalW -= freeLimit6Mix;
-                        }
-                    }
-
-                    if (totalW > 0) {
-                        cost10 = (truckForce === 'auto' || truckForce === '10w') ? getCost('', totalW, '10 ล้อ') : Infinity;
-                        cost6  = (truckForce === 'auto' || truckForce === '6w')  ? getCost('', totalW, '6 ล้อ')  : Infinity;
-                        if (cost10 === 0 && cost10 <= cost6) { totalFree10w++; totalW = 0; }
-                        else if (cost6 === 0) { totalFree6w++; totalW = 0; }
                     }
                 }
 
                 if (totalW > 0) {
-                    cost10 = (truckForce === 'auto' || truckForce === '10w') ? getCost('', totalW, '10 ล้อ') : Infinity;
-                    cost6  = (truckForce === 'auto' || truckForce === '6w')  ? getCost('', totalW, '6 ล้อ')  : Infinity;
-                    let fCost = Math.min(cost10, cost6);
-
-                    if (fCost !== Infinity) {
-                        tCost += fCost; 
-                        let pickedCar = (cost10 <= cost6 && cost10 !== Infinity) ? '10 ล้อ' : '6 ล้อ';
-                        transportNotes.push(`เศษคละแบบ ${Math.round(totalW).toLocaleString()} กก. (${pickedCar}) = ${fCost.toLocaleString()} บ.`);
-                    } else {
+                    if (fCost !== Infinity && fCost !== 0) {
+                        tCost += fCost;
+                        transportNotes.push(`เศษคละแบบ ${Math.round(totalW).toLocaleString()} กก. (${mixCar}) = ${fCost.toLocaleString()} บ.`);
+                        leftovers.forEach(l => penalizedTypes.add(l.type));
+                    } else if (fCost === Infinity) {
                         transportNotes.push(`เศษคละแบบเกินเกณฑ์ขนส่ง`);
                         leftovers.forEach(l => penalizedTypes.add(l.type));
                     }
@@ -522,9 +508,10 @@
             if (!tNote && tCost === 0 && totalDeliveryMeters > 0) tNote = "จัดส่งฟรีตามโปรโมชั่น";
         }
 
-        // ---------------- รอบที่ 3: คำนวณราคาและแสดงผล ----------------
+        // ---------------- รอบที่ 3: คำนวณราคาและเตรียมข้อมูลลง Database ----------------
         let transPerMeter = totalDeliveryMeters > 0 ? (tCost / totalDeliveryMeters) : 0; 
         let tM = 0, tQ = 0, tP = 0, validRows = 0; let calculatedRows = [];
+        let itemsForDatabase = [];
 
         rows.forEach((r) => {
             const type = r.querySelector('.pType').value; const priceType = r.querySelector('.pPriceType').value; const lStr = r.querySelector('.pLen').value; const qStr = r.querySelector('.pQty').value;
@@ -532,22 +519,27 @@
             const m = dbPrices.find(p => { const dL = String(p.label).replace(/เสาเข็ม/g, '').trim(); const iL = type.replace(/เสาเข็ม/g, '').trim(); if (dL !== iL) return false; const nums = String(p.range).match(/\d+(\.\d+)?/g); if (!nums) return true; if (nums.length === 1) return (parseFloat(nums[0])===6 ? l>5 : l===parseFloat(nums[0])); return l>=parseFloat(nums[0]) && l<=parseFloat(nums[1]); });
             if (m) { 
                 let actualPriceType = priceType; 
-                // 1. เติมคำว่า "ส่งโครงการ"
                 let priceLabel = priceType === 'Self' ? 'รับเอง' : (priceType === 'Stock' ? 'ลงร้าน' : 'ส่งโครงการ');
                 if (priceType !== 'Self' && penalizedTypes.has(type)) { 
                     actualPriceType = 'Self'; 
                     priceLabel = `${priceLabel} <br><span style="color:#ef4444; font-weight:bold;">(ปรับราคารับเองตามเกณฑ์คละ)</span>`; 
                 }
-
-                // 2. คำนวณราคา/ต้น รวมค่าส่ง
+                
                 let rowProductTotal = m[actualPriceType] * l * q; 
                 let rowTrans = (priceType !== 'Self') ? (transPerMeter * l * q) : 0;
                 let pricePerPiece = (rowProductTotal + rowTrans) / q;
+                let lineTotalWithTrans = rowProductTotal + rowTrans;
 
                 tP += rowProductTotal; tM += (l*q); tQ += q; validRows++; 
                 const fullTypeName = r.querySelector('.pType').options[r.querySelector('.pType').selectedIndex].text; 
                 calculatedRows.push({ labelShort: `${type.replace('เสาเข็ม','')} ${l}ม.`, labelFull: `${fullTypeName} ${l}เมตร`, qty: q, meters: l*q, productTotal: rowProductTotal, isDelivery: priceType !== 'Self' }); 
-                prtTableBody.innerHTML += `<tr><td>${validRows}</td><td style="text-align:left;">${fullTypeName} <span style="font-size:11px; color:#64748b;">(${priceLabel})</span></td><td>${l.toFixed(2)}</td><td>${q.toLocaleString()}</td><td>${pricePerPiece.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td><td>${(rowProductTotal + rowTrans).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td></tr>`;            
+                
+                itemsForDatabase.push({
+                    item_index: validRows, pile_type: fullTypeName, price_type: priceType, length: l, qty: q,
+                    price_per_piece: parseFloat(pricePerPiece.toFixed(2)), line_total: parseFloat(lineTotalWithTrans.toFixed(2))
+                });
+
+                prtTableBody.innerHTML += `<tr><td>${validRows}</td><td style="text-align:left;">${fullTypeName} <span style="font-size:11px; color:#64748b;">(${priceLabel})</span></td><td>${l.toFixed(2)}</td><td>${q.toLocaleString()}</td><td>${pricePerPiece.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td><td>${lineTotalWithTrans.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td></tr>`; 
             }
         });
         
@@ -557,15 +549,27 @@
         let beforeVatHtml = ''; let afterVatHtml = ''; 
         calculatedRows.forEach(r => { let transAdd = r.isDelivery ? (transPerMeter * r.meters) : 0; let rowNet = (r.productTotal + transAdd); beforeVatHtml += `<div class="breakdown-text">${r.labelFull} @ ${(rowNet/r.qty).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})} บ./ต้น</div>`; afterVatHtml += `<div class="breakdown-text" style="color: #475569;">${r.labelFull} @ ${(rowNet*1.07/r.qty).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})} บ./ต้น</div>`; });
         
-        document.getElementById('resQty').innerText = tQ.toLocaleString() + " ต้น"; document.getElementById('resMeters').innerText = tM.toLocaleString() + " ม."; document.getElementById('resSubTotal').innerText = tP.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; document.getElementById('resSubTotalNote').innerHTML = subTotalNoteStr; document.getElementById('resTransport').innerText = tCost===0 ? (totalDeliveryMeters===0 ? "-" : "ส่งฟรี") : tCost.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; document.getElementById('resTransNote').innerText = tNote; document.getElementById('resAvgTransport').innerText = transPerMeter.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท/เมตร"; document.getElementById('resBeforeVat').innerText = grandBeforeVat.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; document.getElementById('resBeforeVatBreakdown').innerHTML = beforeVatHtml; document.getElementById('resVat').innerText = vat.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; document.getElementById('resGrandTotal').innerText = grandTotal.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; document.getElementById('resAfterVatBreakdown').innerHTML = afterVatHtml; 
+        document.getElementById('resQty').innerText = tQ.toLocaleString() + " ต้น"; 
+        document.getElementById('resMeters').innerText = tM.toLocaleString() + " ม."; 
+        
         let totalWAll = Object.values(deliveryGroups).reduce((sum, g) => sum + g.weight, 0);
-        document.getElementById('resWeight').innerText = `${totalWAll.toLocaleString(undefined, {maximumFractionDigits: 0})} กก. (${(totalWAll/1000).toFixed(2)} ตัน)`;
-
-        // แสดงข้อความเตือนเฉพาะกรณีที่มีการสั่งคละหน้าตัด
-        const warningBox = document.getElementById('resWeightWarning');
-        if (warningBox) {
-            warningBox.style.display = (Object.keys(deliveryGroups).length > 1) ? 'block' : 'none';
+        if (document.getElementById('resWeight')) {
+            document.getElementById('resWeight').innerText = `${totalWAll.toLocaleString(undefined, {maximumFractionDigits: 0})} กก. (${(totalWAll/1000).toFixed(2)} ตัน)`;
         }
+        const warningBox = document.getElementById('resWeightWarning');
+        if (warningBox) { warningBox.style.display = (Object.keys(deliveryGroups).length > 1) ? 'block' : 'none'; }
+
+        document.getElementById('resSubTotal').innerText = tP.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; 
+        document.getElementById('resSubTotalNote').innerHTML = subTotalNoteStr; 
+        document.getElementById('resTransport').innerText = tCost===0 ? (totalDeliveryMeters===0 ? "-" : "ส่งฟรี") : tCost.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; 
+        document.getElementById('resTransNote').innerText = tNote; 
+        document.getElementById('resAvgTransport').innerText = transPerMeter.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท/เมตร"; 
+        document.getElementById('resBeforeVat').innerText = grandBeforeVat.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; 
+        document.getElementById('resBeforeVatBreakdown').innerHTML = beforeVatHtml; 
+        document.getElementById('resVat').innerText = vat.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; 
+        document.getElementById('resGrandTotal').innerText = grandTotal.toLocaleString(undefined,{minimumFractionDigits:2}) + " บาท"; 
+        document.getElementById('resAfterVatBreakdown').innerHTML = afterVatHtml; 
+        
         if(document.getElementById('prtSubTotal')) document.getElementById('prtSubTotal').innerText = tP.toLocaleString(undefined,{minimumFractionDigits:2}); 
         if(document.getElementById('prtSubTotalNote')) document.getElementById('prtSubTotalNote').innerText = ""; 
         if(document.getElementById('prtTransport')) document.getElementById('prtTransport').innerText = tCost===0 ? (totalDeliveryMeters===0 ? "0.00" : "0.00") : tCost.toLocaleString(undefined,{minimumFractionDigits:2}); 
@@ -577,6 +581,7 @@
         if(document.getElementById('prtGrandTotal')) document.getElementById('prtGrandTotal').innerText = grandTotal.toLocaleString(undefined,{minimumFractionDigits:2}); 
         if(document.getElementById('prtAfterVatBreakdown')) document.getElementById('prtAfterVatBreakdown').innerHTML = "";
         
+        currentOrderSummary = { subtotal: tP, transport_cost: tCost, transport_note: tNote, vat: vat, grand_total: grandTotal, items: itemsForDatabase };
         document.getElementById('result').style.display = 'block';
     }
     let qrImageDataUrl = "";
@@ -594,28 +599,23 @@
             document.getElementById('frmQrCode').value = '';
             qrImageDataUrl = '';
         }
-    function prepareAndPrint(mode) {
-        document.getElementById('prtProject').innerText = document.getElementById('frmProject').value || '-'; 
-        document.getElementById('prtWorkType').innerText = document.getElementById('frmWorkType').value || '-'; 
-        document.getElementById('prtBuyer').innerText = document.getElementById('frmBuyer').value || '-'; 
-        document.getElementById('prtPhone').innerText = document.getElementById('frmPhone').value || '-'; 
-        document.getElementById('prtReceiver').innerText = document.getElementById('frmReceiver').value || '-'; 
-        document.getElementById('prtReceiverPhone').innerText = document.getElementById('frmReceiverPhone').value || '-'; 
-        document.getElementById('prtDate').innerText = new Date(document.getElementById('frmDate').value).toLocaleDateString('th-TH'); 
-        const dDate = new Date(document.getElementById('frmDeliveryDate').value); 
-        document.getElementById('prtDeliveryDate').innerText = isNaN(dDate) ? '-' : dDate.toLocaleDateString('th-TH', {year:'numeric', month:'long', day:'numeric'}); 
-        document.getElementById('prtSeller').innerText = document.getElementById('frmSeller').value || '-'; 
-        document.getElementById('prtSellerAddress').innerText = document.getElementById('frmSellerAddress').value || '-'; 
-        document.getElementById('prtTerms').innerText = document.getElementById('frmTerms').value || '-'; 
-        document.getElementById('prtTaxName').innerText = document.getElementById('taxName').value || '-'; 
-        document.getElementById('prtTaxBranch').innerText = document.getElementById('taxBranch').value || '-'; 
-        document.getElementById('prtTaxAddress').innerText = document.getElementById('taxAddress').value || '-'; 
-        document.getElementById('prtTaxID').innerText = document.getElementById('taxID').value || '-'; 
-        document.getElementById('prtTaxRemarks').innerText = document.getElementById('taxRemarks').value || '-';
-        document.getElementById('prtRemarks').innerText = document.getElementById('frmRemarks').value || '-';
+    
+    async function prepareAndPrint(mode) {
+        // ถ้ายอมไม่ได้กดคำนวณ ให้ระบบสั่งคำนวณอัตโนมัติ
+        if (!currentOrderSummary) {
+            calculate();
+        }
+        // ถ้าคำนวณแล้วยังไม่ผ่าน (เช่น กรอกข้อมูลไม่ครบ) ให้หยุดทำงาน
+        if (!currentOrderSummary) return;
 
+        let docNo = '- (ฉบับร่าง)';
         const docNoSpan = document.getElementById('prtDocNo');
+
+        // 🎯 ตรรกะแยกโหมด (เจเนอเรทเลข PILE ถ้ากดปุ่มสั่งซื้อ)
         if (mode === 'real') {
+            const isConfirmed = confirm("คุณต้องการยืนยันการบันทึกข้อมูลการสั่งซื้อและออกใบสั่งซื้อนี้หรือไม่?");
+            if (!isConfirmed) return;
+
             const now = new Date();
             const y = now.getFullYear();
             const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -623,22 +623,116 @@
             const hh = String(now.getHours()).padStart(2, '0');
             const mm = String(now.getMinutes()).padStart(2, '0');
             const ss = String(now.getSeconds()).padStart(2, '0');
-            docNoSpan.innerText = `PILE${y}${m}${d}${hh}${mm}${ss}`;
-            docNoSpan.style.display = 'inline';
-        } else {
-            docNoSpan.innerText = '- (ฉบับร่าง)';
-            docNoSpan.style.display = 'inline'; 
+            docNo = `PILE${y}${m}${d}${hh}${mm}${ss}`;
+
+            // โชว์ Loading ขณะกำลังยิงข้อมูลลง Supabase
+            document.getElementById('loader').style.display = 'flex';
+            document.getElementById('loaderMsg').innerText = 'กำลังบันทึกข้อมูลออเดอร์ลงฐานข้อมูล...';
+
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                const created_by = session ? session.user.id : null;
+
+                // 1. บันทึกลงตาราง orders (Schema public)
+                const orderHeader = {
+                    doc_no: docNo,
+                    project_name: document.getElementById('frmProject')?.value || '-',
+                    work_type: document.getElementById('frmWorkType')?.value || '-',
+                    buyer_name: document.getElementById('frmBuyer')?.value || '-',
+                    buyer_phone: document.getElementById('frmPhone')?.value || '-',
+                    receiver_name: document.getElementById('frmReceiver')?.value || '-',
+                    receiver_phone: document.getElementById('frmReceiverPhone')?.value || '-',
+                    seller_name: document.getElementById('frmSeller')?.value || '-',
+                    seller_id: document.getElementById('frmSellerID')?.value || null,
+                    terms: document.getElementById('frmTerms')?.value || '-',
+                    order_date: document.getElementById('frmDate')?.value || new Date().toISOString().split('T')[0],
+                    delivery_date: document.getElementById('frmDeliveryDate')?.value || null,
+                    subtotal: currentOrderSummary.subtotal,
+                    transport_cost: currentOrderSummary.transport_cost,
+                    transport_note: currentOrderSummary.transport_note,
+                    vat: currentOrderSummary.vat,
+                    grand_total: currentOrderSummary.grand_total,
+                    remarks: document.getElementById('frmRemarks')?.value || '-',
+                    created_by: created_by
+                };
+
+                const { error: orderError } = await supabaseClient.from('orders').insert([orderHeader]);
+                if (orderError) throw orderError;
+
+                // 2. บันทึกรายการลงตาราง order_items (แยกทีละแถว)
+                const itemsToInsert = currentOrderSummary.items.map(item => ({
+                    ...item,
+                    doc_no: docNo
+                }));
+
+                const { error: itemsError } = await supabaseClient.from('order_items').insert(itemsToInsert);
+                if (itemsError) throw itemsError;
+
+                alert("✅ บันทึกข้อมูลใบสั่งซื้อลงฐานข้อมูลเรียบร้อยแล้ว!");
+            } catch (err) {
+                console.error("Save Order Error:", err);
+                alert("⚠️ ไม่สามารถบันทึกข้อมูลลงฐานข้อมูลได้: " + err.message);
+                document.getElementById('loader').style.display = 'none';
+                return;
+            }
+            document.getElementById('loader').style.display = 'none';
         }
 
+        // แสดงเลขที่เอกสารในใบปริ้นท์
+        if (docNoSpan) {
+            docNoSpan.innerText = docNo;
+            docNoSpan.style.display = 'inline';
+        }
+
+        // แมปข้อมูลแสดงผลในใบปริ้นท์
+        if(document.getElementById('prtProject')) document.getElementById('prtProject').innerText = document.getElementById('frmProject')?.value || '-'; 
+        if(document.getElementById('prtWorkType')) document.getElementById('prtWorkType').innerText = document.getElementById('frmWorkType')?.value || '-'; 
+        if(document.getElementById('prtBuyer')) document.getElementById('prtBuyer').innerText = document.getElementById('frmBuyer')?.value || '-'; 
+        if(document.getElementById('prtPhone')) document.getElementById('prtPhone').innerText = document.getElementById('frmPhone')?.value || '-'; 
+        if(document.getElementById('prtReceiver')) document.getElementById('prtReceiver').innerText = document.getElementById('frmReceiver')?.value || '-'; 
+        if(document.getElementById('prtReceiverPhone')) document.getElementById('prtReceiverPhone').innerText = document.getElementById('frmReceiverPhone')?.value || '-'; 
+        
+        const rawDate = document.getElementById('frmDate')?.value;
+        if(document.getElementById('prtDate')) document.getElementById('prtDate').innerText = rawDate ? new Date(rawDate).toLocaleDateString('th-TH') : '-';
+        const dDate = new Date(document.getElementById('frmDeliveryDate')?.value); 
+        if(document.getElementById('prtDeliveryDate')) document.getElementById('prtDeliveryDate').innerText = isNaN(dDate) ? '-' : dDate.toLocaleDateString('th-TH', {year:'numeric', month:'long', day:'numeric'}); 
+        
+        if(document.getElementById('prtSeller')) document.getElementById('prtSeller').innerText = document.getElementById('frmSeller')?.value || '-'; 
+        if(document.getElementById('prtSellerAddress')) document.getElementById('prtSellerAddress').innerText = document.getElementById('frmSellerAddress')?.value || '-'; 
+        if(document.getElementById('prtSellerID')) document.getElementById('prtSellerID').innerText = document.getElementById('frmSellerID')?.value || '-'; 
+        if(document.getElementById('prtTerms')) document.getElementById('prtTerms').innerText = document.getElementById('frmTerms')?.value || '-'; 
+        if(document.getElementById('prtTaxName')) document.getElementById('prtTaxName').innerText = document.getElementById('taxName')?.value || '-'; 
+        if(document.getElementById('prtTaxBranch')) document.getElementById('prtTaxBranch').innerText = document.getElementById('taxBranch')?.value || '-'; 
+        if(document.getElementById('prtTaxAddress')) document.getElementById('prtTaxAddress').innerText = document.getElementById('taxAddress')?.value || '-'; 
+        if(document.getElementById('prtTaxID')) document.getElementById('prtTaxID').innerText = document.getElementById('taxID')?.value || '-'; 
+        if(document.getElementById('prtTaxRemarks')) document.getElementById('prtTaxRemarks').innerText = document.getElementById('taxRemarks')?.value || '-'; 
+        if(document.getElementById('prtRemarks')) document.getElementById('prtRemarks').innerText = document.getElementById('frmRemarks')?.value || '-'; 
+
+        // จัดการรูปภาพ QR Code (ถ้ามี)
         const prtQrBox = document.getElementById('prtQrBox');
-            const prtQrImg = document.getElementById('prtQrImg');
-            if (qrImageDataUrl) {
-                prtQrImg.src = qrImageDataUrl;
-                prtQrBox.style.display = 'block';
-            } else {
-                prtQrImg.src = '';
-                prtQrBox.style.display = 'none';
+        const prtQrImg = document.getElementById('prtQrImg');
+        if (prtQrBox && prtQrImg) {
+            if (typeof qrImageDataUrl !== 'undefined' && qrImageDataUrl) { 
+                prtQrImg.src = qrImageDataUrl; 
+                prtQrBox.style.display = 'block'; 
+            } else { 
+                prtQrImg.src = ''; 
+                prtQrBox.style.display = 'none'; 
             }
+        }
+
+        // จัดการลายเซ็น (สำหรับ Agent)
+        const prtSigBuyer = document.getElementById('prtSigBuyer');
+        if (prtSigBuyer && typeof isCanvasEmpty !== 'undefined' && typeof canvas !== 'undefined') {
+            if (!isCanvasEmpty) { 
+                prtSigBuyer.src = canvas.toDataURL('image/png'); 
+                prtSigBuyer.style.display = 'block'; 
+            } else { 
+                prtSigBuyer.src = ''; 
+                prtSigBuyer.style.display = 'none'; 
+            }
+        }
+
         window.print();
     }
 
