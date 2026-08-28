@@ -733,7 +733,9 @@
             }
         }
 
-        window.print();
+        setTimeout(() => {
+            window.print();
+        }, 500);
     }
 
     document.addEventListener("DOMContentLoaded", checkAuth);

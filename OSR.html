@@ -699,7 +699,9 @@
         const prtSigBuyer = document.getElementById('prtSigBuyer');
         if (prtSigBuyer && typeof isCanvasEmpty !== 'undefined' && typeof canvas !== 'undefined') { if (!isCanvasEmpty) { prtSigBuyer.src = canvas.toDataURL('image/png'); prtSigBuyer.style.display = 'block'; } else { prtSigBuyer.src = ''; prtSigBuyer.style.display = 'none'; } }
 
-        window.print();
+        setTimeout(() => {
+            window.print();
+        }, 500);
     }
 
     document.addEventListener("DOMContentLoaded", checkAuth);
