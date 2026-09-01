@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>โปรแกรมคำนวณราคาและออกใบสั่งซื้อ (Call Center)</title>
+    <title>โปรแกรมคำนวณราคาและออกใบเสนอราคา (Call Center)</title>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -92,7 +92,7 @@
 </div>
 
 <div class="container">
-    <h2>ใบสั่งซื้อเสาเข็ม (Call Center)</h2>
+    <h2>ใบเสนอราคาเสาเข็ม (Call Center)</h2>
     
     <div class="section-title">📦 ข้อมูลรายการสินค้า</div>
     <div id="itemList"></div>
@@ -143,7 +143,7 @@
         <div class="result-line"><span>ภาษีมูลค่าเพิ่ม 7%:</span> <strong id="resVat">-</strong></div>
         <div class="result-line total-price" style="display:block; border-bottom:none; margin-top:10px;"><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size: 18px;">ยอดสุทธิรวมภาษี:</span><span id="resGrandTotal" style="font-size: 20px;">-</span></div><div id="resAfterVatBreakdown" style="margin-top: 5px;"></div></div>
 
-        <div class="section-title">📝 รายละเอียดใบสั่งซื้อ & ใบกำกับภาษี</div>
+        <div class="section-title">📝 รายละเอียดใบเสนอราคา & ใบกำกับภาษี</div>
         
         <div class="form-grid">
             <div class="form-group"><label>ชื่อโครงการ</label><input type="text" id="frmProject" placeholder="ชื่อหน่วยงาน/โครงการ"></div>
@@ -161,6 +161,10 @@
             <div class="form-group"><label>วันที่ทำรายการ</label><input type="date" id="frmDate"></div>
             <div class="form-group"><label>วันที่ลูกค้าต้องการให้จัดส่ง</label><input type="date" id="frmDeliveryDate"></div>
         </div>
+        <div class="form-group">
+            <label>สถานที่จัดส่ง (หน้างาน)</label>
+            <textarea id="frmDeliveryAddress" rows="2" placeholder="กรอกรายละเอียดสถานที่จัดส่ง หรือจุดสังเกต..."></textarea>
+        </div>
         <div class="form-grid">
             <div class="form-group"><label>ชื่อผู้ขาย</label><input type="text" id="frmSeller" value="บริษัท ปูนซิเมนต์ไทย (ท่าหลวง) จำกัด" placeholder="ระบุชื่อบริษัท/ผู้ขาย"></div>
             <div class="form-group"><label>เงื่อนไขการชำระเงิน</label><select id="frmTerms"><option value="เงินสด">เงินสด</option></select></div>
@@ -169,16 +173,10 @@
             <label>ที่อยู่ผู้ขาย</label>
             <textarea id="frmSellerAddress" rows="1" placeholder="กรอกที่อยู่ผู้ขาย...">1 หมู่ที่ 9 ถนนพัฒน์พงศ์ ตำบลบ้านครัว อำเภอบ้านหมอ จ.สระบุรี 18270</textarea>
         </div>
+        
         <div class="form-group">
-            <label>หมายเหตุเพิ่มเติม (สำหรับใบสั่งซื้อ)</label>
+            <label>หมายเหตุเพิ่มเติม (สำหรับใบเสนอราคา)</label>
             <textarea id="frmRemarks" rows="2" placeholder="ใส่รายละเอียดเพิ่มเติม เช่น สถานที่จัดส่ง, ข้อตกลงพิเศษ..."></textarea>
-        </div>
-        <div class="form-group" style="grid-column: span 2;">
-            <label>📷 แนบรูป QR Code / บาร์โค้ด สำหรับชำระเงิน (ถ้ามี)</label>
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <input type="file" id="frmQrCode" accept="image/*" onchange="handleQrUpload(event)" style="flex: 1;">
-                <button type="button" class="btn" style="background-color: #ef4444; padding: 10px 15px; font-size: 13px; white-space: nowrap;" onclick="clearQrImage()">❌ ลบรูป</button>
-            </div>
         </div>
 
         <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin-top: 15px; border: 1px solid #cbd5e1;">
@@ -197,13 +195,13 @@
             <button class="btn" style="background-color: #0f766e; font-size: 16px; padding: 14px;" onclick="prepareAndPrint('real')">💾 บันทึกและสั่งซื้อ</button>
         </div>
         <div style="text-align: center; font-size: 12.5px; color: #b91c1c; margin-top: 12px; line-height: 1.5; font-weight: 600;">
-            *ถ้ากดบันทึกจะเป็นการบันทึกข้อมูลการสั่งซื้อของคุณเข้าสู่ระบบ คุณสามารถกดดูตัวอย่างเพื่อดูใบสั่งซื้อก่อนได้ (ไม่มีเลขใบสั่งซื้อ ไม่สามารถใช้ได้)
+            *ถ้ากดบันทึกจะเป็นการบันทึกข้อมูลการสั่งซื้อของคุณเข้าสู่ระบบ คุณสามารถกดดูตัวอย่างเพื่อดูใบเสนอราคาก่อนได้ (ไม่มีเลขใบเสนอราคา ไม่สามารถใช้ได้)
         </div>
     </div>
 </div>
 
 <div id="printArea">
-    <div class="p-header"><h1>ใบสั่งซื้อสินค้า (PURCHASE ORDER)</h1><p>สำหรับ Call Center</p></div>
+    <div class="p-header"><h1>ใบเสนอราคาสินค้า</h1><p>สำหรับ Call Center</p></div>
     <div class="p-grid">
         <div class="p-box">
             <h4>ข้อมูลลูกค้า & สถานที่จัดส่ง</h4>
@@ -211,6 +209,7 @@
             <p><strong>ประเภทงาน:</strong> <span id="prtWorkType"></span></p>
             <p><strong>ผู้ซื้อ:</strong> <span id="prtBuyer"></span> (โทร: <span id="prtPhone"></span>)</p>
             <p><strong>ผู้รับหน้างาน:</strong> <span id="prtReceiver"></span> (โทร: <span id="prtReceiverPhone"></span>)</p>
+            <p><strong>สถานที่จัดส่ง:</strong> <span id="prtDeliveryAddress"></span></p>
             <p><strong>วันที่ต้องการรับสินค้า:</strong> <span id="prtDeliveryDate"></span></p>
         </div>
         <div class="p-box">
@@ -243,18 +242,30 @@
     </div>
 
     <div class="keep-together">
-        <div style="margin-top:20px; font-size:13px; color:#000; border: 1px dashed #ccc; padding: 15px;">
-            <strong>หมายเหตุใบสั่งซื้อ:</strong> <span id="prtRemarks"></span><br>
-            <strong>หมายเหตุใบกำกับภาษี:</strong> <span id="prtTaxRemarks"></span><br>
-            <span id="prtTransNote" style="color: #475569; font-size: 12px; font-weight: normal; display: block; margin-top: 5px;"></span>
+        <!-- แบ่งครึ่ง 2 ฝั่ง (ซ้าย 70% | ขวา 30%) -->
+        <div style="display: grid; grid-template-columns: 7fr 3fr; gap: 20px; align-items: start; margin-top: 20px; margin-bottom: 30px;">
+            
+            <!-- ฝั่งซ้าย (70%): กล่องหมายเหตุ -->
+            <div style="font-size:13px; color:#000; border: 1px dashed #ccc; padding: 15px; border-radius: 6px; height: 100%; box-sizing: border-box;">
+                <strong>หมายเหตุใบเสนอราคา:</strong> <span id="prtRemarks"></span><br>
+                <strong>หมายเหตุใบกำกับภาษี:</strong> <span id="prtTaxRemarks"></span><br>
+                <span id="prtTransNote" style="color: #475569; font-size: 12px; font-weight: normal; display: block; margin-top: 5px;"></span>
+            </div>
+
+            <!-- ฝั่งขวา (30%): รูป QR Code -->
+            <div style="text-align: center; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; background: #fff; box-sizing: border-box;">
+                <div style="font-size: 11px; font-weight: bold; margin-bottom: 8px; color: #1e293b;">สแกนเพื่อชำระเงิน</div>
+                <img src="QRcode.jpg" style="width: 100%; max-width: 150px; height: auto; object-fit: contain; display: block; margin: 0 auto;">
+                <div style="margin-top: 8px; font-size: 11px; font-weight: bold; color: #1e293b;">
+                    คอนกรีตซีแพค (ท่าหลวง)
+                </div>
+            </div>
+
         </div>
-        <!-- แสดงรูป QR Code ตอนปริ้นท์ (จะซ่อนถ้าไม่มีรูป) -->
-        <div id="prtQrBox" style="display: none; text-align: center; margin: 15px auto; page-break-inside: avoid; break-inside: avoid; width: 100%; box-sizing: border-box;">
-            <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #1e293b;">สแกนเพื่อชำระเงิน (QR Code / Barcode)</div>
-            <img id="prtQrImg" src="" style="width: 95%; max-width: 620px; height: auto; max-height: 380px; object-fit: contain; border: 1px solid #cbd5e1; padding: 8px; border-radius: 6px; display: inline-block; box-sizing: border-box;">
-        </div>
+
+        <!-- ส่วนลายเซ็นด้านล่าง -->
         <div class="p-footer">
-            <div><div class="p-sig-line"></div><strong>ผู้มีอำนาจสั่งซื้อสินค้า / ผู้ซื้อ</strong><br><br>วันที่: ______/______/______</div>
+            <div><div class="p-sig-line"></div><strong>ผู้รับใบเสนอราคา / ลูกค้า</strong><br><br>วันที่: ______/______/______</div>
             <div><div class="p-sig-line"></div><strong>ผู้เสนอราคา / ผู้ขาย (Call Center)</strong><br><br>วันที่: ______/______/______</div>
         </div>
     </div>
@@ -583,21 +594,6 @@
         document.getElementById('result').style.display = 'block';
     }
 
-    let qrImageDataUrl = "";
-        function handleQrUpload(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) { qrImageDataUrl = e.target.result; };
-                reader.readAsDataURL(file);
-            } else {
-                qrImageDataUrl = "";
-            }
-        }
-        function clearQrImage() {
-            document.getElementById('frmQrCode').value = '';
-            qrImageDataUrl = '';
-        }
     async function prepareAndPrint(mode) {
         if (!currentOrderSummary) { calculate(); }
         if (!currentOrderSummary) return;
@@ -606,7 +602,7 @@
         const docNoSpan = document.getElementById('prtDocNo');
 
         if (mode === 'real') {
-            const isConfirmed = confirm("คุณต้องการยืนยันการบันทึกข้อมูลการสั่งซื้อและออกใบสั่งซื้อนี้หรือไม่?");
+            const isConfirmed = confirm("คุณต้องการยืนยันการบันทึกข้อมูลการสั่งซื้อและออกใบเสนอราคานี้หรือไม่?");
             if (!isConfirmed) return;
 
             const now = new Date();
@@ -638,6 +634,7 @@
                     terms: document.getElementById('frmTerms')?.value || '-',
                     order_date: document.getElementById('frmDate')?.value || new Date().toISOString().split('T')[0],
                     delivery_date: document.getElementById('frmDeliveryDate')?.value || null,
+                    delivery_address: document.getElementById('frmDeliveryAddress')?.value || '-',
                     subtotal: currentOrderSummary.subtotal,
                     transport_cost: currentOrderSummary.transport_cost,
                     transport_note: currentOrderSummary.transport_note,
@@ -655,7 +652,7 @@
                 const { error: itemsError } = await supabaseClient.schema('CallCenter').from('order_items').insert(itemsToInsert);
                 if (itemsError) throw itemsError;
 
-                alert("✅ บันทึกข้อมูลใบสั่งซื้อลงฐานข้อมูลเรียบร้อยแล้ว!");
+                alert("✅ บันทึกข้อมูลใบเสนอราคาลงฐานข้อมูลเรียบร้อยแล้ว!");
             } catch (err) {
                 console.error("Save Order Error:", err);
                 alert("⚠️ ไม่สามารถบันทึกข้อมูลลงฐานข้อมูลได้: " + err.message);
@@ -673,6 +670,8 @@
         if(document.getElementById('prtPhone')) document.getElementById('prtPhone').innerText = document.getElementById('frmPhone')?.value || '-'; 
         if(document.getElementById('prtReceiver')) document.getElementById('prtReceiver').innerText = document.getElementById('frmReceiver')?.value || '-'; 
         if(document.getElementById('prtReceiverPhone')) document.getElementById('prtReceiverPhone').innerText = document.getElementById('frmReceiverPhone')?.value || '-'; 
+        if(document.getElementById('prtDeliveryAddress')) document.getElementById('prtDeliveryAddress').innerText = document.getElementById('frmDeliveryAddress')?.value || '-';
+        
         const rawDate = document.getElementById('frmDate')?.value;
         if(document.getElementById('prtDate')) document.getElementById('prtDate').innerText = rawDate ? new Date(rawDate).toLocaleDateString('th-TH') : '-';
         const dDate = new Date(document.getElementById('frmDeliveryDate')?.value); 
@@ -683,13 +682,11 @@
         if(document.getElementById('prtTerms')) document.getElementById('prtTerms').innerText = document.getElementById('frmTerms')?.value || '-'; 
         if(document.getElementById('prtTaxName')) document.getElementById('prtTaxName').innerText = document.getElementById('taxName')?.value || '-'; 
         if(document.getElementById('prtTaxBranch')) document.getElementById('prtTaxBranch').innerText = document.getElementById('taxBranch')?.value || '-'; 
-        if(document.getElementById('prtTaxAddress')) document.getElementById('taxAddress').innerText = document.getElementById('taxAddress')?.value || '-'; 
+        if(document.getElementById('prtTaxAddress')) document.getElementById('prtTaxAddress').innerText = document.getElementById('taxAddress')?.value || '-';
         if(document.getElementById('prtTaxID')) document.getElementById('prtTaxID').innerText = document.getElementById('taxID')?.value || '-'; 
         if(document.getElementById('prtTaxRemarks')) document.getElementById('prtTaxRemarks').innerText = document.getElementById('taxRemarks')?.value || '-'; 
         if(document.getElementById('prtRemarks')) document.getElementById('prtRemarks').innerText = document.getElementById('frmRemarks')?.value || '-'; 
 
-        const prtQrBox = document.getElementById('prtQrBox'); const prtQrImg = document.getElementById('prtQrImg');
-        if (prtQrBox && prtQrImg) { if (typeof qrImageDataUrl !== 'undefined' && qrImageDataUrl) { prtQrImg.src = qrImageDataUrl; prtQrBox.style.display = 'block'; } else { prtQrImg.src = ''; prtQrBox.style.display = 'none'; } }
         const prtSigBuyer = document.getElementById('prtSigBuyer');
         if (prtSigBuyer && typeof isCanvasEmpty !== 'undefined' && typeof canvas !== 'undefined') { if (!isCanvasEmpty) { prtSigBuyer.src = canvas.toDataURL('image/png'); prtSigBuyer.style.display = 'block'; } else { prtSigBuyer.src = ''; prtSigBuyer.style.display = 'none'; } }
 
