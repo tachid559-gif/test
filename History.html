@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ประวัติการสั่งซื้อ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; padding: 20px; }
+        .container { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        h2 { text-align: center; color: #1e293b; margin-top: 0; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
+        
+        .filters { display: flex; gap: 15px; margin-bottom: 20px; }
+        select, input { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: 'Sarabun'; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #cbd5e1; padding: 12px; text-align: center; font-size: 14px; }
+        th { background-color: #f8fafc; font-weight: bold; color: #334155; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        tr:hover { background-color: #e2e8f0; cursor: pointer; }
+        
+        .btn-back { background: #64748b; color: white; padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; margin-bottom: 20px; font-weight: bold; }
+        
+        .loading { text-align: center; padding: 20px; color: #3b82f6; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <a href="#" onclick="window.history.back()" class="btn-back">⬅️ กลับหน้าก่อนหน้า</a>
+    <h2>📋 ประวัติการสั่งซื้อ (Order History)</h2>
+
+    <div class="filters">
+        <select id="schemaSelect" onchange="loadOrders()">
+            <option value="public">รายการของ Agent</option>
+            <option value="osr">รายการของ OSR</option>
+            <option value="CallCenter">รายการของ Call Center</option>
+        </select>
+        <!-- ช่องนี้จะเปิดให้กรอกเฉพาะ Admin -->
+        <input type="text" id="searchSeller" placeholder="ค้นหา รหัสผู้ขาย (ถ้าต้องการ)..." style="display: none;" onkeyup="loadOrders()">
+    </div>
+
+    <div id="loader" class="loading">กำลังโหลดข้อมูล...</div>
+
+    <table>
+        <thead>
+            <tr>
+                <th width="15%">เลขที่เอกสาร</th>
+                <th width="15%">วันที่สั่งซื้อ</th>
+                <th width="20%">ชื่อลูกค้า</th>
+                <th width="15%">รหัสผู้ขาย</th>
+                <th width="15%">ยอดสุทธิ (บาท)</th>
+                <th width="20%">จัดการ</th>
+            </tr>
+        </thead>
+        <tbody id="orderTableBody">
+            <!-- ข้อมูลจะมาแทรกตรงนี้ -->
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const SUPABASE_URL = 'https://iqzurohkdxcmyydixdmv.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxenVyb2hrZHhjbXl5ZGl4ZG12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNjU1NDgsImV4cCI6MjA5NDY0MTU0OH0.Ks85DSc17zkPJ5Pzn-Ay7jO9vzsI2HkVXmlpUq8vewo';
+    
+    const { createClient } = supabase;
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUserRole = '';
+    let currentUserId = '';
+
+    async function init() {
+        const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+        if (sessionError || !session) { window.location.replace('index.html'); return; }
+        
+        currentUserId = session.user.id;
+
+        const { data: userData } = await supabaseClient.from('user_roles').select('role').eq('user_id', currentUserId).single();
+        if (!userData) { window.location.replace('index.html'); return; }
+        
+        currentUserRole = userData.role.toLowerCase().trim();
+
+        // ถ้าเป็น Admin ให้เปิดช่องค้นหารหัสผู้ขาย และล็อค Schema ตั้งต้นให้ตรงกับแผนกของ User
+        if (currentUserRole === 'admin') {
+            document.getElementById('searchSeller').style.display = 'block';
+        } else {
+            // ล็อคให้ดูได้แค่ Schema ของตัวเอง
+            const schemaSelect = document.getElementById('schemaSelect');
+            if (currentUserRole === 'agent') schemaSelect.value = 'public';
+            else if (currentUserRole === 'osr') schemaSelect.value = 'osr';
+            else if (currentUserRole === 'callcenter') schemaSelect.value = 'CallCenter';
+            schemaSelect.disabled = true; // ล็อคไม่ให้เปลี่ยน
+        }
+
+        loadOrders();
+    }
+
+    async function loadOrders() {
+        const loader = document.getElementById('loader');
+        const tbody = document.getElementById('orderTableBody');
+        const schema = document.getElementById('schemaSelect').value;
+        const searchInput = document.getElementById('searchSeller').value.trim();
+        
+        loader.style.display = 'block';
+        tbody.innerHTML = '';
+
+        try {
+            // สร้างคำสั่ง Query เบื้องต้น
+            let query = supabaseClient.schema(schema === 'public' ? 'public' : schema).from('orders').select('id, doc_no, order_date, buyer_name, seller_id, grand_total').order('created_at', { ascending: false });
+
+            // 🎯 ตรรกะแยกสิทธิ์ 
+            if (currentUserRole !== 'admin') {
+                // ถ้าไม่ใช่ Admin ให้โชว์เฉพาะ "บิลที่ตัวเองสร้างเท่านั้น"
+                query = query.eq('created_by', currentUserId);
+            } else if (searchInput !== '') {
+                // ถ้าเป็น Admin และมีการพิมพ์ค้นหารหัสผู้ขาย
+                query = query.ilike('seller_id', `%${searchInput}%`);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="color: #64748b;">ไม่พบประวัติการสั่งซื้อ</td></tr>`;
+            } else {
+                data.forEach(order => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${order.doc_no}</strong></td>
+                            <td>${new Date(order.order_date).toLocaleDateString('th-TH')}</td>
+                            <td>${order.buyer_name}</td>
+                            <td>${order.seller_id || '-'}</td>
+                            <td style="color: #b91c1c; font-weight: bold;">${order.grand_total.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                            <td><button onclick="alert('ฟีเจอร์ดูรายละเอียดบิลกำลังพัฒนา!')" style="background:#10b981; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">ดูรายละเอียด</button></td>
+                        </tr>
+                    `;
+                });
+            }
+        } catch (e) {
+            console.error(e);
+            tbody.innerHTML = `<tr><td colspan="6" style="color: #ef4444;">เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>`;
+        }
+        loader.style.display = 'none';
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+</script>
+
+</body>
+</html>
