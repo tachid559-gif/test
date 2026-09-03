@@ -122,7 +122,10 @@
                     <p><strong>เลขที่เอกสาร:</strong> <span id="vDocNo" style="color: #b91c1c; font-weight: bold;"></span></p>
                     <p><strong>วันที่ทำรายการ:</strong> <span id="vOrderDate"></span></p>
                     <p><strong>ผู้ขาย:</strong> <span id="vSeller"></span></p>
-                    <p><strong>รหัสผู้ขาย:</strong> <span id="vSellerId"></span></p>
+                    <!-- 🔥 เพิ่มบรรทัดที่อยู่ผู้ขาย 🔥 -->
+                    <p><strong>ที่อยู่ผู้ขาย:</strong> <span id="vSellerAddress"></span></p>
+                    <!-- 🔥 ใส่ id=boxSellerId ไว้เพื่อสั่งซ่อนผ่าน Javascript 🔥 -->
+                    <p id="boxSellerId"><strong>รหัสผู้ขาย:</strong> <span id="vSellerId"></span></p>
                     <p><strong>เงื่อนไขชำระเงิน:</strong> <span id="vTerms"></span></p>
                 </div>
             </div>
@@ -266,8 +269,15 @@
             document.getElementById('vOrderDate').innerText = new Date(orderData.order_date).toLocaleDateString('th-TH');
             document.getElementById('vDeliveryDate').innerText = orderData.delivery_date ? new Date(orderData.delivery_date).toLocaleDateString('th-TH') : '-';
             document.getElementById('vSeller').innerText = orderData.seller_name || '-';
-            document.getElementById('vSellerId').innerText = orderData.seller_id || '-';
+            document.getElementById('vSellerAddress').innerText = orderData.seller_address || '-';
             document.getElementById('vTerms').innerText = orderData.terms || '-';
+            // 🎯 ซ่อน/แสดง รหัสผู้ขาย (ถ้าเป็น osr ให้โชว์, นอกนั้นซ่อน)
+            if (schema === 'osr') {
+                document.getElementById('boxSellerId').style.display = 'block';
+                document.getElementById('vSellerId').innerText = orderData.seller_id || '-';
+            } else {
+                document.getElementById('boxSellerId').style.display = 'none';
+            }
 
             // ยัดข้อมูลรายการสินค้า
             const vItemsBody = document.getElementById('vItemsBody');

@@ -648,6 +648,7 @@
                     order_date: document.getElementById('frmDate')?.value || new Date().toISOString().split('T')[0],
                     delivery_date: document.getElementById('frmDeliveryDate')?.value || null,
                     delivery_address: document.getElementById('frmDeliveryAddress')?.value || '-',
+                    seller_address: document.getElementById('frmSellerAddress')?.value || '-',
                     subtotal: currentOrderSummary.subtotal,
                     transport_cost: currentOrderSummary.transport_cost,
                     transport_note: currentOrderSummary.transport_note,
