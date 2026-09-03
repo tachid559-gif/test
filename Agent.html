@@ -300,6 +300,13 @@
                 const switchBtn2 = document.createElement('button'); switchBtn2.innerHTML = '🔄 สลับไป Call Center'; switchBtn2.style.cssText = 'background: #8b5cf6; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-family: Sarabun; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'; switchBtn2.onclick = () => window.location.href = 'CallCenter.html'; btnContainer.appendChild(switchBtn2);
             }
 
+            const historyBtn = document.createElement('button');
+            historyBtn.innerHTML = '📋 ประวัติการสั่งซื้อ';
+            historyBtn.style.cssText = 'background: #3b82f6; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-family: Sarabun; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);';
+            // 🎯 กำหนดให้เปิดหน้า History.html
+            historyBtn.onclick = () => window.location.href = 'History.html';
+            btnContainer.appendChild(historyBtn);
+
             const logoutBtn = document.createElement('button'); logoutBtn.innerHTML = '🚪 ออกจากระบบ'; logoutBtn.style.cssText = 'background: #ef4444; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-family: Sarabun; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'; logoutBtn.onclick = async () => { await supabaseClient.auth.signOut(); window.location.replace('index.html'); };
             btnContainer.appendChild(logoutBtn); document.body.appendChild(btnContainer);
 

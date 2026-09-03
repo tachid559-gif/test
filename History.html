@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; padding: 20px; }
+        body { font-family: 'Sarabun', sans-serif; background-color: #f1f5f9; padding: 20px; margin: 0; }
         .container { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
         h2 { text-align: center; color: #1e293b; margin-top: 0; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
         
@@ -18,11 +18,45 @@
         th, td { border: 1px solid #cbd5e1; padding: 12px; text-align: center; font-size: 14px; }
         th { background-color: #f8fafc; font-weight: bold; color: #334155; }
         tr:nth-child(even) { background-color: #f8fafc; }
-        tr:hover { background-color: #e2e8f0; cursor: pointer; }
+        tr:hover { background-color: #e2e8f0; }
         
         .btn-back { background: #64748b; color: white; padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; margin-bottom: 20px; font-weight: bold; }
+        .btn-view { background:#10b981; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; font-family: 'Sarabun'; }
         
         .loading { text-align: center; padding: 20px; color: #3b82f6; font-weight: bold; }
+
+        /* ---------------- Modal (Pop-up) Styles ---------------- */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: flex-start; z-index: 1000; overflow-y: auto; padding: 30px 0; }
+        .modal-content { background: #fff; width: 100%; max-width: 800px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); position: relative; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 25px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; border-radius: 8px 8px 0 0; }
+        .modal-header h3 { margin: 0; color: #1e293b; }
+        .btn-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b; }
+        .btn-print { background: #2563eb; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-family: 'Sarabun'; font-weight: bold; }
+        
+        /* ---------------- Print Document Styles ---------------- */
+        .print-doc { padding: 30px; font-size: 13px; color: #000; }
+        .p-header { text-align: center; margin-bottom: 25px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+        .p-header h1 { font-size: 22px; margin: 0 0 5px 0; }
+        .p-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .p-box { padding: 0; border: none; }
+        .p-box h4 { margin: 0 0 8px 0; border-bottom: 1px solid #eee; padding-bottom: 5px; font-size: 14px; font-weight: bold; }
+        .p-box p { margin: 5px 0; font-size: 13px; line-height: 1.4; }
+        .p-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .p-table th, .p-table td { border: 1px solid #000; padding: 8px; text-align: center; }
+        .p-table th { background-color: #f2f2f2; font-size: 13px; }
+        .p-summary-box { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+        .p-summary-table { width: 55%; border-collapse: collapse; font-size: 13px; }
+        .p-summary-table td { padding: 6px 10px; border: 1px solid #000; text-align: right; }
+        .p-summary-table td:nth-child(1) { font-weight: bold; background: #f2f2f2; width: 55%; white-space: nowrap; }
+
+        @media print {
+            body * { visibility: hidden; }
+            .modal-overlay, .modal-overlay * { visibility: visible; }
+            .modal-overlay { position: absolute; left: 0; top: 0; background: none; padding: 0; }
+            .modal-content { box-shadow: none; max-width: 100%; }
+            .modal-header, .btn-back, h2, .filters { display: none !important; }
+            .print-doc { padding: 0; }
+        }
     </style>
 </head>
 <body>
@@ -37,7 +71,6 @@
             <option value="osr">รายการของ OSR</option>
             <option value="CallCenter">รายการของ Call Center</option>
         </select>
-        <!-- ช่องนี้จะเปิดให้กรอกเฉพาะ Admin -->
         <input type="text" id="searchSeller" placeholder="ค้นหา รหัสผู้ขาย (ถ้าต้องการ)..." style="display: none;" onkeyup="loadOrders()">
     </div>
 
@@ -54,10 +87,76 @@
                 <th width="20%">จัดการ</th>
             </tr>
         </thead>
-        <tbody id="orderTableBody">
-            <!-- ข้อมูลจะมาแทรกตรงนี้ -->
-        </tbody>
+        <tbody id="orderTableBody"></tbody>
     </table>
+</div>
+
+<!-- ---------------- Modal แสดงรายละเอียดบิล ---------------- -->
+<div class="modal-overlay" id="docModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>📑 รายละเอียดใบสั่งซื้อ</h3>
+            <div>
+                <button class="btn-print" onclick="window.print()">🖨️ พิมพ์เอกสาร</button>
+                <button class="btn-close" onclick="closeModal()">✖</button>
+            </div>
+        </div>
+        
+        <div class="print-doc" id="printDocContent">
+            <div class="p-header">
+                <h1>ใบสั่งซื้อสินค้า (PURCHASE ORDER)</h1>
+                <p id="docDeptTitle">-</p>
+            </div>
+            
+            <div class="p-grid">
+                <div class="p-box">
+                    <h4>ข้อมูลลูกค้า & สถานที่จัดส่ง</h4>
+                    <p><strong>ชื่อโครงการ:</strong> <span id="vProject"></span></p>
+                    <p><strong>ประเภทงาน:</strong> <span id="vWorkType"></span></p>
+                    <p><strong>ผู้ซื้อ:</strong> <span id="vBuyer"></span> (โทร: <span id="vBuyerPhone"></span>)</p>
+                    <p><strong>ผู้รับหน้างาน:</strong> <span id="vReceiver"></span> (โทร: <span id="vReceiverPhone"></span>)</p>
+                    <p><strong>วันที่ต้องการรับสินค้า:</strong> <span id="vDeliveryDate"></span></p>
+                </div>
+                <div class="p-box">
+                    <h4>ข้อมูลผู้ขาย & เอกสาร</h4>
+                    <p><strong>เลขที่เอกสาร:</strong> <span id="vDocNo" style="color: #b91c1c; font-weight: bold;"></span></p>
+                    <p><strong>วันที่ทำรายการ:</strong> <span id="vOrderDate"></span></p>
+                    <p><strong>ผู้ขาย:</strong> <span id="vSeller"></span></p>
+                    <p><strong>รหัสผู้ขาย:</strong> <span id="vSellerId"></span></p>
+                    <p><strong>เงื่อนไขชำระเงิน:</strong> <span id="vTerms"></span></p>
+                </div>
+            </div>
+            
+            <table class="p-table">
+                <thead>
+                    <tr>
+                        <th width="5%">ลำดับ</th>
+                        <th width="40%">รายการสินค้า</th>
+                        <th width="10%">ยาว(ม.)</th>
+                        <th width="10%">จำนวน</th>
+                        <th width="15%">ราคา/ต้น</th>
+                        <th width="20%">รวมเงิน</th>
+                    </tr>
+                </thead>
+                <tbody id="vItemsBody"></tbody>
+            </table>
+
+            <div class="p-summary-box">
+                <table class="p-summary-table">
+                    <tr><td>รวมราคาสินค้า:</td><td style="vertical-align: top; font-weight: bold;"><span id="vSubtotal"></span></td></tr>
+                    <tr><td>ค่าจัดส่ง:</td><td style="vertical-align: top; font-weight: bold;"><span id="vTransport"></span></td></tr>
+                    <tr><td>มูลค่าสุทธิ (ก่อน VAT):</td><td style="vertical-align: top; font-weight: bold;"><span id="vBeforeVat"></span></td></tr>
+                    <tr><td>ภาษีมูลค่าเพิ่ม (7%):</td><td style="vertical-align: top; font-weight: bold;"><span id="vVat"></span></td></tr>
+                    <tr><td style="font-size:14px;"><strong>ยอดสุทธิรวมภาษี:</strong></td><td style="vertical-align: top; font-weight: bold; font-size: 14px;"><span id="vGrandTotal"></span></td></tr>
+                </table>
+            </div>
+
+            <div style="margin-top:20px; font-size:13px; color:#000; border: 1px dashed #ccc; padding: 15px;">
+                <strong>หมายเหตุเพิ่มเติม:</strong> <span id="vRemarks"></span><br>
+                <span id="vTransportNote" style="color: #475569; font-size: 12px; font-weight: normal; display: block; margin-top: 5px;"></span>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -81,16 +180,14 @@
         
         currentUserRole = userData.role.toLowerCase().trim();
 
-        // ถ้าเป็น Admin ให้เปิดช่องค้นหารหัสผู้ขาย และล็อค Schema ตั้งต้นให้ตรงกับแผนกของ User
         if (currentUserRole === 'admin') {
             document.getElementById('searchSeller').style.display = 'block';
         } else {
-            // ล็อคให้ดูได้แค่ Schema ของตัวเอง
             const schemaSelect = document.getElementById('schemaSelect');
             if (currentUserRole === 'agent') schemaSelect.value = 'public';
             else if (currentUserRole === 'osr') schemaSelect.value = 'osr';
             else if (currentUserRole === 'callcenter') schemaSelect.value = 'CallCenter';
-            schemaSelect.disabled = true; // ล็อคไม่ให้เปลี่ยน
+            schemaSelect.disabled = true; 
         }
 
         loadOrders();
@@ -106,15 +203,11 @@
         tbody.innerHTML = '';
 
         try {
-            // สร้างคำสั่ง Query เบื้องต้น
-            let query = supabaseClient.schema(schema === 'public' ? 'public' : schema).from('orders').select('id, doc_no, order_date, buyer_name, seller_id, grand_total').order('created_at', { ascending: false });
+            let query = supabaseClient.schema(schema === 'public' ? 'public' : schema).from('orders').select('*').order('created_at', { ascending: false });
 
-            // 🎯 ตรรกะแยกสิทธิ์ 
             if (currentUserRole !== 'admin') {
-                // ถ้าไม่ใช่ Admin ให้โชว์เฉพาะ "บิลที่ตัวเองสร้างเท่านั้น"
                 query = query.eq('created_by', currentUserId);
             } else if (searchInput !== '') {
-                // ถ้าเป็น Admin และมีการพิมพ์ค้นหารหัสผู้ขาย
                 query = query.ilike('seller_id', `%${searchInput}%`);
             }
 
@@ -125,6 +218,9 @@
                 tbody.innerHTML = `<tr><td colspan="6" style="color: #64748b;">ไม่พบประวัติการสั่งซื้อ</td></tr>`;
             } else {
                 data.forEach(order => {
+                    // แปลงก้อนข้อมูล JSON (สั่งเป็น string ป้องกันบั๊กเวลาแนบผ่านปุ่ม)
+                    const orderJson = JSON.stringify(order).replace(/"/g, '&quot;');
+                    
                     tbody.innerHTML += `
                         <tr>
                             <td><strong>${order.doc_no}</strong></td>
@@ -132,7 +228,7 @@
                             <td>${order.buyer_name}</td>
                             <td>${order.seller_id || '-'}</td>
                             <td style="color: #b91c1c; font-weight: bold;">${order.grand_total.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                            <td><button onclick="alert('ฟีเจอร์ดูรายละเอียดบิลกำลังพัฒนา!')" style="background:#10b981; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">ดูรายละเอียด</button></td>
+                            <td><button class="btn-view" onclick="viewOrder('${order.doc_no}', '${schema}')">ดูรายละเอียด</button></td>
                         </tr>
                     `;
                 });
@@ -142,6 +238,78 @@
             tbody.innerHTML = `<tr><td colspan="6" style="color: #ef4444;">เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>`;
         }
         loader.style.display = 'none';
+    }
+
+    // ฟังก์ชันดึงรายละเอียดไอเท็มและเปิด Modal
+    async function viewOrder(docNo, schema) {
+        try {
+            // ดึงข้อมูลหัวบิล
+            const { data: orderData, error: orderErr } = await supabaseClient.schema(schema === 'public' ? 'public' : schema).from('orders').select('*').eq('doc_no', docNo).single();
+            if (orderErr) throw orderErr;
+
+            // ดึงข้อมูลรายการสินค้า (items)
+            const { data: itemsData, error: itemsErr } = await supabaseClient.schema(schema === 'public' ? 'public' : schema).from('order_items').select('*').eq('doc_no', docNo).order('item_index', { ascending: true });
+            if (itemsErr) throw itemsErr;
+
+            // แมปชื่อแผนกบนหัวกระดาษ
+            let deptName = schema === 'public' ? 'Agent' : (schema === 'osr' ? 'OSR' : 'Call Center');
+            document.getElementById('docDeptTitle').innerText = `สำหรับ ${deptName}`;
+
+            // ยัดข้อมูลลงหัวบิล
+            document.getElementById('vProject').innerText = orderData.project_name || '-';
+            document.getElementById('vWorkType').innerText = orderData.work_type || '-';
+            document.getElementById('vBuyer').innerText = orderData.buyer_name || '-';
+            document.getElementById('vBuyerPhone').innerText = orderData.buyer_phone || '-';
+            document.getElementById('vReceiver').innerText = orderData.receiver_name || '-';
+            document.getElementById('vReceiverPhone').innerText = orderData.receiver_phone || '-';
+            document.getElementById('vDocNo').innerText = orderData.doc_no;
+            document.getElementById('vOrderDate').innerText = new Date(orderData.order_date).toLocaleDateString('th-TH');
+            document.getElementById('vDeliveryDate').innerText = orderData.delivery_date ? new Date(orderData.delivery_date).toLocaleDateString('th-TH') : '-';
+            document.getElementById('vSeller').innerText = orderData.seller_name || '-';
+            document.getElementById('vSellerId').innerText = orderData.seller_id || '-';
+            document.getElementById('vTerms').innerText = orderData.terms || '-';
+
+            // ยัดข้อมูลรายการสินค้า
+            const vItemsBody = document.getElementById('vItemsBody');
+            vItemsBody.innerHTML = '';
+            itemsData.forEach(item => {
+                let pLabel = item.price_type === 'Self' ? 'รับเอง' : (item.price_type === 'Stock' ? 'ลงร้าน' : 'ส่งโครงการ');
+                vItemsBody.innerHTML += `
+                    <tr>
+                        <td>${item.item_index}</td>
+                        <td style="text-align: left;">${item.pile_type} <span style="font-size:11px; color:#64748b;">(${pLabel})</span></td>
+                        <td>${item.length.toFixed(2)}</td>
+                        <td>${item.qty.toLocaleString()}</td>
+                        <td>${item.price_per_piece.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                        <td>${item.line_total.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    </tr>
+                `;
+            });
+
+            // ยัดข้อมูลสรุปราคา
+            let beforeVat = orderData.grand_total / 1.07;
+            document.getElementById('vSubtotal').innerText = orderData.subtotal.toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('vTransport').innerText = orderData.transport_cost === 0 ? "0.00" : orderData.transport_cost.toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('vBeforeVat').innerText = beforeVat.toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('vVat').innerText = orderData.vat.toLocaleString(undefined, {minimumFractionDigits:2});
+            document.getElementById('vGrandTotal').innerText = orderData.grand_total.toLocaleString(undefined, {minimumFractionDigits:2});
+            
+            document.getElementById('vRemarks').innerText = orderData.remarks || '-';
+            document.getElementById('vTransportNote').innerText = orderData.transport_note ? `(รายละเอียดการจัดส่ง: ${orderData.transport_note})` : '';
+
+            // เปิด Modal
+            document.getElementById('docModal').style.display = 'flex';
+            document.body.style.overflow = 'hidden'; // ป้องกันฉากหลังเลื่อน
+
+        } catch (e) {
+            console.error("Error viewing order:", e);
+            alert("ไม่สามารถเปิดรายละเอียดบิลได้");
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('docModal').style.display = 'none';
+        document.body.style.overflow = 'auto';
     }
 
     document.addEventListener("DOMContentLoaded", init);
